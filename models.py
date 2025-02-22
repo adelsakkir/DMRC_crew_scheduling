@@ -3,7 +3,7 @@ from gurobipy import GRB
 import networkx as nx
 from collections import defaultdict
 
-from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints
+from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, solve_RMLP, new_duty_with_bellman_ford
 
 def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_roster_stats = False):
 
@@ -158,7 +158,6 @@ def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration
     return paths, len(paths)
 
 
-
 def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_iterations =100, show_lazy_updates_every = 10, show_duties = False, show_roster_stats = False):
     model = gp.Model("Lazy")
 
@@ -243,7 +242,20 @@ def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_ite
 
     return paths, len(paths)
 
-def column_generation():
-    raise NotImplementedError
+
+def column_generation(method, graph, services, init_duties, num_iter = 10):        # Method 1: Bellman Ford, Method 2: Topological sort
+    if method == 1:
+        for _ in range(num_iter):
+            selected_duties, dual_values, selected_duties_vars = solve_RMLP(services, init_duties)
+            path, length, graph_copy = new_duty_with_bellman_ford(graph, dual_values)
+            print(path, length)
+            init_duties.append(path)
+
+        pass
+    elif method == 2:
+        pass
+    else:
+        print("Invalid method. Please choose either 1 or 2.")
+        return
 
     

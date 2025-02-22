@@ -25,15 +25,18 @@ class Service:
         self.trip_dur = 0
 
 def hhmm2mins(hhmm):
+    ''' Convert time from HH:MM format to minutes '''
     h, m = map(int, hhmm.split(':'))
     return h*60 + m
 
 def mins2hhmm(mins):
+    ''' Convert time from minutes to HH:MM format '''
     h = mins // 60
     m = mins % 60
     return f"{h:02}:{m:02}"
 
 def fetch_data(filename):
+    ''' Fetch data from the given CSV file '''
     services = []
     services_dict = {}
     with open(filename, 'r') as file:
@@ -46,6 +49,7 @@ def fetch_data(filename):
     return services, services_dict
 
 def draw_graph_with_edges(graph, n=50):
+    ''' Draw the first n edges of the given graph '''
     # Create a directed subgraph containing only the first n edges
     subgraph = nx.DiGraph()
     
@@ -70,8 +74,9 @@ def draw_graph_with_edges(graph, n=50):
     # plt.show()
     plt.savefig(f'first{n}edges.png')
 
-## checking if two services can be connected
 def node_legal(service1, service2):
+    ''' Check if two services can be connected '''
+
     if service1.stepback_train_num == "No Stepback":
         if service2.train_num == service1.train_num:
             if service1.end_stn == service2.start_stn and 0 <= (service2.start_time - service1.end_time) <= 15:
@@ -90,10 +95,17 @@ def node_legal(service1, service2):
     return False
 
 def no_overlap(service1, service2):
+    ''' Check if two services overlap in time '''
     return service1.end_time <= service2.start_time
 
-
 def create_duty_graph(services):
+    ''' 
+        Creates a directed graph of services, with source and sink nodes at -2, -1 respectively
+
+        Arguments: services - list of Service objects
+
+        Returns: a directed graph G
+    '''
     G = nx.DiGraph()
 
     for i, service1 in enumerate(services):
@@ -107,7 +119,6 @@ def create_duty_graph(services):
             if i != j:
                 if node_legal(service1, service2):
                     G.add_edge(service1.serv_num, service2.serv_num, weight=service1.serv_dur)
-
 
     #end node edges
     for i, service in enumerate(services):
@@ -164,6 +175,9 @@ def generate_paths(outgoing_var, show_paths = False):
     return paths, paths_decision_vars
 
 def solution_verify(services, duties):
+    ''' 
+    Checks if all services are assigned to a duty 
+    '''
     flag = True
     for service in services:
         service_check = False
@@ -255,10 +269,8 @@ def get_lazy_constraints(bad_paths, bad_paths_decision_vars, service_dict):
 
     return lazy_constraints
 
-
-
-### Helpers for column generation
 def can_append(duty, service):
+    ''' Checking if service can be appended to duty or not '''
     last_service = duty[-1]
     
     start_end_stn_tf = last_service.end_stn == service.start_stn
@@ -284,12 +296,20 @@ def can_append(duty, service):
             return True
     return False
 
-def solving_RMLP_art_vars_final(services, duties):
+def solve_RMLP(services, duties):
+    '''
+    Solves the RMLP 
 
+    Arguments: services - list of Service objects,
+            duties - list of duties
+    
+    Returns: selected_duties - list of selected duties,
+            dual_values - list of dual values for each service,
+            selected_duties_vars - list of selected duty variables
+    '''
     objective = 0
     model = gp.Model("CrewScheduling")
     model.setParam('OutputFlag', 0)
-
     
     duty_vars = []
     for i in range(len(duties)):
@@ -297,16 +317,18 @@ def solving_RMLP_art_vars_final(services, duties):
 
     big_penalty = 1e6
 
-
     model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
 
-    
     service_constraints = []
     for service_idx, service in enumerate(services):
         constr = model.addConstr(
             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
+
+    # constraints for source and sink services too
+    model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -2 in duty)>= 1, name=f"Service_minus2")
+    model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -1 in duty)>= 1, name=f"Service_minus1")
 
     model.optimize()
 
@@ -323,9 +345,13 @@ def solving_RMLP_art_vars_final(services, duties):
         selected_duties = [v.varName for v in model.getVars() if v.x > 0.5]
         selected_duties_vars = [v for v in model.getVars() if v.x > 0.5]
         
-        print("Positive Duties, 0.5: ", len(selected_duties))
+        print("Positive Duties, > 0.5: ", len(selected_duties))
+        
+        count = 0
         for variable in selected_duties_vars:
-            print(variable.varName, variable.x)
+            if variable.x == 1.0:
+                count += 1
+        print(f"Number of 1s is: {count}")
         
         print(f"Objective Value: {objective.getValue()}")
 
@@ -334,3 +360,31 @@ def solving_RMLP_art_vars_final(services, duties):
         print("No optimal solution found.")
         return None, None, None
 
+def new_duty_with_bellman_ford(graph, dual_values):
+    '''
+    Finds a new duty using NetworkX Bellman-Ford algorithm
+
+    Arguments: graph - directed graph of services,
+            dual_values - list of dual values for each service
+
+    Returns: path - list of services in the new duty,
+            length - length of the new duty,
+            graph_copy - copy of the graph with adjusted edge weights
+    '''
+    graph_copy = graph.copy()
+    for u, v in graph_copy.edges():
+        if u != -2:
+            service_idx_u = u
+            dual_u = dual_values[service_idx_u]
+
+            graph_copy[u][v]['weight'] = -(dual_u)  # Adjust edge weight by dual value
+        else:
+            service_idx_u = -2
+            dual_u = dual_values[service_idx_u]
+            graph_copy[u][v]['weight'] = -(dual_u)
+    
+
+    path = nx.bellman_ford_path(graph_copy, -2, -1, weight='weight')
+    length = nx.bellman_ford_path_length(graph_copy, -2, -1, weight='weight')
+
+    return path, length, graph_copy
