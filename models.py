@@ -3,7 +3,7 @@ from gurobipy import GRB
 import networkx as nx
 from collections import defaultdict
 
-from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints
+from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, generate_initial_feasible_duties_random_from_services, restricted_linear_program, generate_new_column
 
 def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_roster_stats = False):
 
@@ -243,7 +243,56 @@ def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_ite
 
     return paths, len(paths)
 
-def column_generation():
-    raise NotImplementedError
+def column_generation(graph, service_dict, init_column_generator = "random", pricing_method = "bellman ford", iterations = 100, verbose = False):
+
+    if init_column_generator == "random":
+        init_duties = []
+        init_duties_1 = generate_initial_feasible_duties_random_from_services(service_dict.values(), num_duties=934, show_duties= False)
+    elif init_column_generator == "mpc":
+        init_duties_1 = generate_initial_feasible_duties_random_from_services(service_dict.values(), num_duties=934, show_duties= False)
+        init_duties, duty_count = mpc_duration_constr(graph, service_dict, time_limit = 30, show_logs = verbose, show_duties = False, show_roster_stats = False)
+
+    current_duties = init_duties + init_duties_1
+    if verbose: 
+        print("Current Duties: ", len(current_duties))
+
+
+
+    for i in range(iterations):
+        if verbose: 
+            print("\nIteration: ", i)
+        obj, duals, basis, selected_duties, selected_duties_vars = restricted_linear_program(service_dict, current_duties, show_solutions= False, show_objective = verbose)
+        # duty, reduced_cost = generate_new_column(graph, dual_values, method = "bellman ford", verbose =True)
+        duty, reduced_cost = generate_new_column(graph, duals, method = pricing_method, verbose = verbose)
+        if duty in current_duties:
+            print("Column already in current duties")
+            break
+        else:
+            if verbose:
+                print("Unique Column found!")
+                print("Generated duty:", duty, "Reduced cost (shortest path):", reduced_cost)
+            if reduced_cost >= 0:
+                print("Optimal solution found!")
+                break
+            
+            current_duties.append(duty)
+            if verbose:
+                print("Current Duties: ", len(current_duties))
+
+    if verbose:
+        print ("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+
+    decimal_duties = 0 
+    for var_name, var_value in selected_duties:
+        print(var_name, var_value)
+        if var_value <1:
+            decimal_duties += 1
+        # print( variable.x)
+
+    print("Selected Duty count: ",len(selected_duties))
+    print("Decimal Duty count: ",decimal_duties)
+
+    return selected_duties, obj
+
 
     

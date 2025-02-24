@@ -284,13 +284,14 @@ def can_append(duty, service):
             return True
     return False
 
-def solving_RMLP_art_vars_final(services, duties):
+def restricted_linear_program(service_dict, duties, show_solutions = False, show_objective = False, warm_start_solution=None, t=0):
 
-    objective = 0
+    # objective = 0
     model = gp.Model("CrewScheduling")
     model.setParam('OutputFlag', 0)
 
     
+    ###Decision Variables
     duty_vars = []
     for i in range(len(duties)):
         duty_vars.append(model.addVar(vtype=GRB.CONTINUOUS, ub=GRB.INFINITY, lb=0, name=f"x{i}"))
@@ -298,39 +299,173 @@ def solving_RMLP_art_vars_final(services, duties):
     big_penalty = 1e6
 
 
+    ### Objective
     model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
 
     
+    ### Constraints
     service_constraints = []
-    for service_idx, service in enumerate(services):
+    for service_idx, service in enumerate(service_dict.values()):
         constr = model.addConstr(
             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
+    
+
+    ### Warm Start from previous solution
+    # if warm_start_solution:
+    #     for i in warm_start_solution.keys():
+    #         duty_vars[i].VBasis = gp.GRB.BASIC
+    #         duty_vars[i].Start = warm_start_solution[i]
+
+    # for v in model.getVars():
+    #     if v.VBasis == gp.GRB.BASIC:
+    #         # ct+=1
+    #         # basis[int(v.VarNAME[1:])]= v.x
+    #         print(f"Variable '{v.VarName}' is in the basis") 
+
     model.optimize()
 
-    # Step 5: Check the solution and retrieve dual values and selected duties
+
+
     if model.status == GRB.INFEASIBLE:
         print('Infeasible problem!')
+        return None, None, None, None
     elif model.status == GRB.OPTIMAL:
         objective = model.getObjective()
-        print("Optimal solution found")
+        model.write("model.lp") 
+        if show_solutions:
+            print("Optimal solution found")
         
         # Get the dual variables for each service constraint
-        dual_values = [constr.Pi for constr in service_constraints] 
-        
-        selected_duties = [v.varName for v in model.getVars() if v.x > 0.5]
-        selected_duties_vars = [v for v in model.getVars() if v.x > 0.5]
-        
-        print("Positive Duties, 0.5: ", len(selected_duties))
-        for variable in selected_duties_vars:
-            print(variable.varName, variable.x)
-        
-        print(f"Objective Value: {objective.getValue()}")
+        # dual_values = [constr.Pi for constr in service_constraints]
+        duals = dict([(constr.ConstrName, constr.Pi) for constr in service_constraints])
 
-        return selected_duties, dual_values, selected_duties_vars
+        
+        solution = [v.x for v in model.getVars()]
+        # print("Hi" ,len(solution))
+        selected_duties = [(v.varName, v.x) for v in model.getVars() if v.x > 0]
+        selected_duties_vars = [v for v in model.getVars() if v.x > 0]
+        
+        ct = 0 
+        basis = {}
+        for v in model.getVars():
+            if v.VBasis == gp.GRB.BASIC:
+                ct+=1
+                basis[int(v.VarNAME[1:])]= v.x
+
+                
+
+        if show_solutions:
+            print("Positive Duties, 0: ", len(selected_duties))
+            for variable in selected_duties_vars:
+                print(variable.varName, variable.x)
+        if show_objective:    
+            print(f"Objective Value: {objective.getValue()}")
+
+        return objective.getValue(), duals, basis, selected_duties, selected_duties_vars
     else:
         print("No optimal solution found.")
-        return None, None, None
+        return None, None, None, None
 
+def generate_initial_feasible_duties_random_from_services(services, num_duties=934, show_duties = False):
+
+    feasible_duties = []
+
+    # initial set of duties should cover all services
+    # not checking for breaks
+    for service1 in services:
+        duty = [service1]
+        for service2 in services:
+            if service1.serv_num != service2.serv_num:
+                if can_append(duty, service2):
+                    duty.append(service2)
+        feasible_duties.append(duty)
+
+    random_duties = random.sample(feasible_duties, num_duties)
+    serv_num_duty = []
+
+    # to get duty in terms of service numbers
+    for duty in random_duties:
+        tt = []
+        for serv in duty:
+            tt.append(serv.serv_num)
+        serv_num_duty.append(tt)
+    if show_duties:
+        print(serv_num_duty)
+    return serv_num_duty
+
+
+def generate_new_column(graph, dual_values, method = "topological sort", verbose = False):
+    
+
+    if method == "topological sort":
+
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 0
+            else:
+                # graph[u][v]['weight'] = dual_values[u]
+                graph[u][v]['weight'] = dual_values["Service_" + str(u)]
+
+        topo_order = list(nx.topological_sort(graph))
+
+        longest_dist = {node: float('-inf') for node in graph.nodes}
+        longest_dist[-2] = 0  # Distance to source is 0
+        predecessor = {node: None for node in graph.nodes} 
+
+        # Relax edges in topological order
+        for u in topo_order:
+            for v in graph.successors(u):  
+                weight = graph[u][v].get('weight')  
+                if longest_dist[v] < longest_dist[u] + weight:
+                    longest_dist[v] = longest_dist[u] + weight
+                    predecessor[v] = u
+
+        
+        shortest_path = []
+        curr = -1
+
+        while curr is not None:  
+            shortest_path.append(curr)
+            curr = predecessor[curr]
+        # shortest_path.pop()
+        shortest_path.reverse()  
+        # shortest_path.pop()
+
+        if verbose:
+            path_duals = []
+            # path_duals.append(graph[-2][shortest_path[0]]['weight'])
+            for i in range(len(shortest_path)-1):
+                path_duals.append(graph[shortest_path[i]][shortest_path[i+1]]['weight'])
+            # path_duals.append(graph[shortest_path[-1]][-1]['weight'])
+
+            print("Path Duals: ",path_duals)
+
+        return shortest_path[1:-1], longest_dist[-1]
+    
+    elif method == "bellman ford":
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 1
+            else:
+                # graph[u][v]['weight'] = -dual_values[u]
+                graph[u][v]['weight'] = -dual_values["Service_" + str(u)]
+
+        shortest_path = nx.shortest_path(graph, source=-2, target=-1, weight='weight', method = 'bellman-ford')
+        shortest_distance = nx.shortest_path_length(graph, source=-2, target=-1, weight='weight', method = 'bellman-ford')
+
+        if verbose:
+            path_duals = []
+            for i in range(len(shortest_path)-1):
+                path_duals.append(graph[shortest_path[i]][shortest_path[i+1]]['weight'])
+
+            print("Path Duals: ", path_duals)
+
+        return shortest_path[1:-1], shortest_distance
+                        
+
+
+    else:
+        raise NotImplementedError(f"Method {method} not implemented")
