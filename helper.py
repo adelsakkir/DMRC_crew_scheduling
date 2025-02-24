@@ -35,7 +35,7 @@ def mins2hhmm(mins):
     m = mins % 60
     return f"{h:02}:{m:02}"
 
-def fetch_data(filename):
+def fetch_data(filename, partial=False, rakes=10):
     ''' Fetch data from the given CSV file '''
     services = []
     services_dict = {}
@@ -44,8 +44,13 @@ def fetch_data(filename):
         next(reader)
         for row in reader:
             serv_obj = Service(row)
-            services.append(serv_obj)
-            services_dict[serv_obj.serv_num] = serv_obj
+            if partial:
+                if serv_obj.train_num in [f"{700+i}" for i in range(rakes)]:
+                    services.append(serv_obj)
+                    services_dict[serv_obj.serv_num] = serv_obj
+            else:
+                services.append(serv_obj)
+                services_dict[serv_obj.serv_num] = serv_obj
     return services, services_dict
 
 def draw_graph_with_edges(graph, n=50):
@@ -296,7 +301,7 @@ def can_append(duty, service):
             return True
     return False
 
-def solve_RMLP(services, duties):
+def solve_RMLP(services, duties, threshold=0):
     '''
     Solves the RMLP 
 
@@ -306,6 +311,7 @@ def solve_RMLP(services, duties):
     Returns: selected_duties - list of selected duties,
             dual_values - list of dual values for each service,
             selected_duties_vars - list of selected duty variables
+            objective_value = objective value of the iteration
     '''
     objective = 0
     model = gp.Model("CrewScheduling")
@@ -327,8 +333,8 @@ def solve_RMLP(services, duties):
         service_constraints.append(constr)
 
     # constraints for source and sink services too
-    model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -2 in duty)>= 1, name=f"Service_minus2")
-    model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -1 in duty)>= 1, name=f"Service_minus1")
+    # model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -2 in duty)>= 1, name=f"Service_minus2")
+    # model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -1 in duty)>= 1, name=f"Service_minus1")
 
     model.optimize()
 
@@ -340,25 +346,22 @@ def solve_RMLP(services, duties):
         print("Optimal solution found")
         
         # Get the dual variables for each service constraint
-        dual_values = [constr.Pi for constr in service_constraints] 
+        # dual_values = [constr.Pi for constr in service_constraints] 
+        dual_values = {f"service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
         
-        selected_duties = [v.varName for v in model.getVars() if v.x > 0.5]
-        selected_duties_vars = [v for v in model.getVars() if v.x > 0.5]
-        
-        print("Positive Duties, > 0.5: ", len(selected_duties))
-        
-        count = 0
-        for variable in selected_duties_vars:
-            if variable.x == 1.0:
-                count += 1
-        print(f"Number of 1s is: {count}")
+        # for key, value in dual_values.items():
+        #     if 0.01 <= value <= 0.99:
+        #         print(f"{key}: {value}")
+
+        selected_duties = [v.varName for v in model.getVars() if v.x > threshold]
+        selected_duties_vars = [v for v in model.getVars() if v.x > threshold]
         
         print(f"Objective Value: {objective.getValue()}")
 
-        return selected_duties, dual_values, selected_duties_vars
+        return selected_duties, dual_values, selected_duties_vars, objective.getValue()
     else:
         print("No optimal solution found.")
-        return None, None, None
+        return None, None, None, None
 
 def new_duty_with_bellman_ford(graph, dual_values):
     '''
@@ -375,13 +378,14 @@ def new_duty_with_bellman_ford(graph, dual_values):
     for u, v in graph_copy.edges():
         if u != -2:
             service_idx_u = u
-            dual_u = dual_values[service_idx_u]
+            # dual_u = dual_values[service_idx_u]
+            dual_u = dual_values[f"service_{service_idx_u}"]
 
             graph_copy[u][v]['weight'] = -(dual_u)  # Adjust edge weight by dual value
-        else:
-            service_idx_u = -2
-            dual_u = dual_values[service_idx_u]
-            graph_copy[u][v]['weight'] = -(dual_u)
+        # else:
+        #     service_idx_u = -2
+        #     dual_u = dual_values[service_idx_u]
+        #     graph_copy[u][v]['weight'] = -(dual_u)
     
 
     path = nx.bellman_ford_path(graph_copy, -2, -1, weight='weight')
