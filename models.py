@@ -3,7 +3,7 @@ from gurobipy import GRB
 import networkx as nx
 from collections import defaultdict
 
-from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, generate_initial_feasible_duties_random_from_services, restricted_linear_program, generate_new_column
+from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, generate_initial_feasible_duties_random_from_services, restricted_linear_program, generate_new_column, generate_new_column_2
 
 def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_roster_stats = False):
 
@@ -243,15 +243,15 @@ def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_ite
 
     return paths, len(paths)
 
-def column_generation(graph, service_dict, init_column_generator = "random", pricing_method = "bellman ford", iterations = 100, verbose = False):
+def column_generation(graph, service_dict, init_column_generator = "random", mpc_timeout =30, pricing_method = "bellman ford", iterations = 100, verbose = False):
 
     if init_column_generator == "random":
         init_duties = []
         init_duties_1 = generate_initial_feasible_duties_random_from_services(service_dict.values(), num_duties=934, show_duties= False)
     elif init_column_generator == "mpc":
         init_duties_1 = generate_initial_feasible_duties_random_from_services(service_dict.values(), num_duties=934, show_duties= False)
-        init_duties, duty_count = mpc_duration_constr(graph, service_dict, time_limit = 30, show_logs = verbose, show_duties = False, show_roster_stats = False)
-
+        init_duties, duty_count = mpc_duration_constr(graph, service_dict, time_limit = mpc_timeout, show_logs = verbose, show_duties = False, show_roster_stats = False)
+        mpc_sol = duty_count
     current_duties = init_duties + init_duties_1
     if verbose: 
         print("Current Duties: ", len(current_duties))
@@ -262,8 +262,9 @@ def column_generation(graph, service_dict, init_column_generator = "random", pri
         if verbose: 
             print("\nIteration: ", i)
         obj, duals, basis, selected_duties, selected_duties_vars = restricted_linear_program(service_dict, current_duties, show_solutions= False, show_objective = verbose)
-        # duty, reduced_cost = generate_new_column(graph, dual_values, method = "bellman ford", verbose =True)
-        duty, reduced_cost = generate_new_column(graph, duals, method = pricing_method, verbose = verbose)
+        # duty, reduced_cost = generate_new_column(graph, service_dict, duals, method = pricing_method, verbose = verbose)
+        duty, reduced_cost = generate_new_column_2(graph, service_dict, duals, method = pricing_method, verbose = verbose)
+        
         if duty in current_duties:
             print("Column already in current duties")
             break
@@ -271,7 +272,11 @@ def column_generation(graph, service_dict, init_column_generator = "random", pri
             if verbose:
                 print("Unique Column found!")
                 print("Generated duty:", duty, "Reduced cost (shortest path):", reduced_cost)
-            if reduced_cost >= 0:
+            if pricing_method == "bellman ford" and reduced_cost >= 0:
+                print("Optimal solution found!")
+                break
+
+            if pricing_method == "topological sort" and reduced_cost <= 1:
                 print("Optimal solution found!")
                 break
             
@@ -292,7 +297,12 @@ def column_generation(graph, service_dict, init_column_generator = "random", pri
     print("Selected Duty count: ",len(selected_duties))
     print("Decimal Duty count: ",decimal_duties)
 
-    return selected_duties, obj
+    final_duties = {}
+    for var_name, var_value in selected_duties:
+        # final_duties.append(current_duties[int(var_name[1:])])
+        final_duties[var_name] = current_duties[int(var_name[1:])]
+
+    return mpc_sol, current_duties, final_duties, selected_duties, obj
 
 
     

@@ -39,7 +39,9 @@ while repeat:
         duties, duty_count = lazy(graph, service_dict, show_logs = False, max_duty_duration=6*60, lazy_iterations =100, show_lazy_updates_every = 10, show_duties = False, show_roster_stats = True)
     elif num == 4:
         print("\nColumn Generation Model")
-        selected_duties, obj = column_generation(graph, service_dict, init_column_generator = "random", pricing_method = "bellman ford", iterations = 10, verbose = True)
+        # duties, selected_duties, obj = column_generation(graph, service_dict, init_column_generator = "random", pricing_method = "bellman ford", iterations = 10, verbose = True)
+        duties, selected_duties, obj = column_generation(graph, service_dict, init_column_generator = "mpc", pricing_method = "topological sort", iterations = 1000, verbose = True)
+        roster_statistics(duties, service_dict)
     else:
         print("\nInvalid Input")
 
