@@ -246,13 +246,15 @@ def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_ite
 def column_generation(method, graph, services, init_duties, num_iter = 10, threshold = 0):        # Method 1: Bellman Ford, Method 2: Topological sort
     if method == 1:
         objectives = []
+        selected_duty_vars = []
         for _ in range(num_iter):
             print(f"Iteration {_}")
-            selected_duties, dual_values, selected_duties_vars, obj = solve_RMLP(services, init_duties, threshold)
+            selected_dooties, dual_values, selected_duties_vars, obj = solve_RMLP(services, init_duties, threshold)
             objectives.append(obj)
+            selected_duty_vars.append(selected_duties_vars)
             path, length, graph_copy = new_duty_with_bellman_ford(graph, dual_values)
             init_duties.append(path)
-        return objectives
+        return objectives, selected_duty_vars
         pass
     elif method == 2:
         pass

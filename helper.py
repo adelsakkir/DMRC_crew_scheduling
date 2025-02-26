@@ -348,13 +348,9 @@ def solve_RMLP(services, duties, threshold=0):
         # Get the dual variables for each service constraint
         # dual_values = [constr.Pi for constr in service_constraints] 
         dual_values = {f"service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
-        
-        # for key, value in dual_values.items():
-        #     if 0.01 <= value <= 0.99:
-        #         print(f"{key}: {value}")
 
-        selected_duties = [v.varName for v in model.getVars() if v.x > threshold]
-        selected_duties_vars = [v for v in model.getVars() if v.x > threshold]
+        selected_duties_vars = [v.varName for v in model.getVars() if v.x > threshold]
+        selected_duties = [v for v in model.getVars() if v.x > threshold]
         
         print(f"Objective Value: {objective.getValue()}")
 
