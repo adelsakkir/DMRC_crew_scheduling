@@ -59,6 +59,7 @@ def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_
 def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration=6*60, time_limit = 60, show_duties = False, show_roster_stats = False):
 
     model = gp.Model("MPC")
+    model.setParam('OutputFlag', 0)
     if time_limit:
         model.setParam('TimeLimit', time_limit)
 
@@ -111,8 +112,6 @@ def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration
     constr2_end = model.addConstr(path_duration[-1] >= 0 + gp.quicksum(edge_cumu[j,-1] for j in incoming_adj_list[-1]),name=f"relation_{-1}")
     z_y_relation_constraints.append(constr2_end)
 
-
-
     cover_constraints = []
     upper_bound_path_duration = []
     for i in graph.nodes():
@@ -142,7 +141,7 @@ def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration
         linearisation[i,j].append(constr4)
 
     
-    if not show_logs:
+    if show_logs:
         print("Number of decision variables: ", len(edge_vars))
         print("Number of flow constraints: ", len(flow_constraints))
         print("Number of cover constraints: ", len(cover_constraints))
@@ -246,16 +245,15 @@ def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_ite
 def column_generation(method, graph, services, init_duties, num_iter = 10, threshold = 0):        # Method 1: Bellman Ford, Method 2: Topological sort
     if method == 1:
         objectives = []
-        selected_duty_vars = []
         for _ in range(num_iter):
-            print(f"Iteration {_}")
+            # print(f"Iteration {_}")
             selected_dooties, dual_values, selected_duties_vars, obj = solve_RMLP(services, init_duties, threshold)
             objectives.append(obj)
-            selected_duty_vars.append(selected_duties_vars)
             path, length, graph_copy = new_duty_with_bellman_ford(graph, dual_values)
-            init_duties.append(path)
-        return objectives, selected_duty_vars
-        pass
+            init_duties.append(path[1:-1])
+        indexes = [int(duty_num[1:]) for duty_num in selected_duties_vars]
+        selected_duties = [init_duties[i] for i in indexes]
+        return objectives, selected_duties, indexes
     elif method == 2:
         pass
     else:

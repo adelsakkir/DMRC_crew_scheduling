@@ -45,7 +45,7 @@ def fetch_data(filename, partial=False, rakes=10):
         for row in reader:
             serv_obj = Service(row)
             if partial:
-                if serv_obj.train_num in [f"{700+i}" for i in range(rakes)]:
+                if serv_obj.train_num in [f"{700+i}" for i in range(rakes+1)]:
                     services.append(serv_obj)
                     services_dict[serv_obj.serv_num] = serv_obj
             else:
@@ -63,8 +63,9 @@ def draw_graph_with_edges(graph, n=50):
     for u, v in graph.edges():
         if edge_count >= n:
             break
-        subgraph.add_edge(u, v)
-        edge_count += 1
+        if u != -2 and v != -1:
+            subgraph.add_edge(u, v)
+            edge_count += 1
 
     # Plotting the directed subgraph
     plt.figure(figsize=(8, 8))
@@ -321,14 +322,12 @@ def solve_RMLP(services, duties, threshold=0):
     for i in range(len(duties)):
         duty_vars.append(model.addVar(vtype=GRB.CONTINUOUS, ub=GRB.INFINITY, lb=0, name=f"x{i}"))
 
-    big_penalty = 1e6
-
     model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
 
     service_constraints = []
     for service_idx, service in enumerate(services):
         constr = model.addConstr(
-            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) >= 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
@@ -343,7 +342,7 @@ def solve_RMLP(services, duties, threshold=0):
         print('Infeasible problem!')
     elif model.status == GRB.OPTIMAL:
         objective = model.getObjective()
-        print("Optimal solution found")
+        # print("Optimal solution found")
         
         # Get the dual variables for each service constraint
         # dual_values = [constr.Pi for constr in service_constraints] 
@@ -352,14 +351,13 @@ def solve_RMLP(services, duties, threshold=0):
         selected_duties_vars = [v.varName for v in model.getVars() if v.x > threshold]
         selected_duties = [v for v in model.getVars() if v.x > threshold]
         
-        print(f"Objective Value: {objective.getValue()}")
-
         return selected_duties, dual_values, selected_duties_vars, objective.getValue()
     else:
         print("No optimal solution found.")
         return None, None, None, None
 
 def new_duty_with_bellman_ford(graph, dual_values):
+
     '''
     Finds a new duty using NetworkX Bellman-Ford algorithm
 
@@ -388,3 +386,81 @@ def new_duty_with_bellman_ford(graph, dual_values):
     length = nx.bellman_ford_path_length(graph_copy, -2, -1, weight='weight')
 
     return path, length, graph_copy
+
+def count_overlaps(selected_duties, services):
+    '''
+    Checks the number of overlaps of services in selected_duties, and prints them
+
+    Arguments: selected_duties - duties that are selected after column generation
+               services - all services
+
+    Returns: Boolean - False, if number of services != all services covered in selected_duties; else True
+    '''
+    services_covered = {}
+
+    for service in services:
+        services_covered[service.serv_num] = 0
+
+    for duty in selected_duties:
+        for service in duty:
+            services_covered[service] += 1
+
+    num_overlaps = 0
+    num_services = 0
+    for service in services_covered:
+        if services_covered[service] > 1:
+            num_overlaps += 1
+        if services_covered[service] != 0:
+            num_services += 1
+
+    print(f"Number of duties selected: {len(selected_duties)}")
+    print(f"Total number of services: {len(services)}")
+    print(f"Number of services that overlap in duties: {num_overlaps}")
+    print(f"Number of services covered in duties: {num_services}")
+
+    if len(services) != num_services:
+        return False
+    else:
+        return True
+    
+def solve_MIP(services, duties, threshold=0, cutoff= 100, mipgap = 0.01, timelimit = 600):
+    '''
+    Solves the RMLP 
+
+    Arguments: services - list of Service objects,
+            duties - list of duties
+    
+    Returns: selected_duties - list of selected duties,
+            dual_values - list of dual values for each service,
+            selected_duties_vars - list of selected duty variables
+            objective_value = objective value of the iteration
+    '''
+    objective = 0
+    model = gp.Model("CrewScheduling_IP")
+    model.setParam('OutputFlag', 0)
+    
+    duty_vars = []
+    for i in range(len(duties)):
+        duty_vars.append(model.addVar(vtype=GRB.BINARY, name=f"x{i}"))
+
+    model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
+
+    service_constraints = []
+    for service_idx, service in enumerate(services):
+        constr = model.addConstr(
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) == 1,
+            name=f"Service_{service.serv_num}")
+        service_constraints.append(constr)
+
+    model.setParam('MIPGap', mipgap)
+    model.setParam('TimeLimit', timelimit)
+    model.setParam('MIPFocus', 1)
+    model.setParam('Cutoff', cutoff)
+    model.optimize()
+
+    # Step 5: Check the solution and retrieve dual values and selected duties
+    if model.status == GRB.OPTIMAL or model.status == gp.GRB.TIME_LIMIT:
+        selected_duties = [i for i, var in enumerate(duty_vars) if var.x > 0.5]
+        return model.ObjVal, selected_duties, model
+    else:
+        return None, None, model
