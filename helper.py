@@ -4,6 +4,7 @@ import networkx as nx
 import random
 import matplotlib.pyplot as plt
 import inspect
+import numpy as np
 from collections import defaultdict
 import gurobipy as gp 
 from gurobipy import GRB
@@ -331,10 +332,6 @@ def solve_RMLP(services, duties, threshold=0):
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
-    # constraints for source and sink services too
-    # model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -2 in duty)>= 1, name=f"Service_minus2")
-    # model.addConstr(gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if -1 in duty)>= 1, name=f"Service_minus1")
-
     model.optimize()
 
     # Step 5: Check the solution and retrieve dual values and selected duties
@@ -346,7 +343,7 @@ def solve_RMLP(services, duties, threshold=0):
         
         # Get the dual variables for each service constraint
         # dual_values = [constr.Pi for constr in service_constraints] 
-        dual_values = {f"service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
+        dual_values = {f"Service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
 
         selected_duties_vars = [v.varName for v in model.getVars() if v.x > threshold]
         selected_duties = [v for v in model.getVars() if v.x > threshold]
@@ -464,3 +461,37 @@ def solve_MIP(services, duties, threshold=0, cutoff= 100, mipgap = 0.01, timelim
         return model.ObjVal, selected_duties, model
     else:
         return None, None, model
+
+class DynamicBundleStabilisation:
+    def __init__(self, services, alpha = 0.5, max_bundle_size = 10):
+        self.services = services
+        self.service_indices = {service.serv_num: i for i, service in enumerate(services)}
+        self.alpha = alpha
+        self.max_bundle_size = max_bundle_size
+
+        # initialising bundle
+        self.bundle = []        # list of [dual values, objective values] pairs
+        self.stability_center = None
+        self.best_objective = float('inf')
+
+        # initialise duals to 0
+        self.current_duals = {f"Service_{service.serv_num}": 0 for service in services}
+
+        # proximity parameter for trust region
+        self.mu = 1.0
+
+    def get_stabilised_duals(self, duals, objective_value):
+        """
+        Update the bundle and caluclate stabilised dual values
+        Input:
+            duals: dictionary of dual values
+            objective_value: objective value of the current iteration
+        Output:
+            stabilised_duals: dictionary of stabilised dual values
+        """
+
+        # first call
+        if self.stability_center is None:
+            self.stability_center = dict(duals)
+            self.best_objective = objective_value
+            return duals
