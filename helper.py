@@ -7,6 +7,8 @@ import inspect
 from collections import defaultdict
 import gurobipy as gp 
 from gurobipy import GRB
+from collections import defaultdict
+from collections import deque
 
 class Service:
     def __init__(self, attrs):
@@ -471,7 +473,7 @@ def generate_new_column(graph, service_dict, dual_values, method = "topological 
     else:
         raise NotImplementedError(f"Method {method} not implemented")
     
-def generate_new_column_2(graph, service_dict, dual_values, method = "topological sort", verbose = False):
+def generate_new_column_2(graph, service_dict, dual_values, method = "topological sort", verbose = False, time_constr = 6*60):
 
     
 
@@ -547,10 +549,167 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
         return shortest_path[1:-1], shortest_distance
                         
 
+    elif method == "dp":
 
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 0
+            else:
+                # graph[u][v]['weight'] = dual_values[u]
+                graph[u][v]['weight'] = dual_values["Service_" + str(u)]
+
+        dp_dict = defaultdict(dict)
+
+        topo_order = list(nx.topological_sort(graph))
+        # print(topo_order)
+        # for time in range(time_constr):
+        #     dp_dict[-2][time] = (0, None)
+
+        for node in topo_order:
+            for time in range(time_constr+1):
+                if node == -2:
+                    dp_dict[node][time] = (0, None)
+                else:
+                    best_pred = None
+                    best = 0
+                    for pred in graph.predecessors(node):
+                        # if graph.nodes[pred]["service_time"] > time:
+                        if pred in [-1,-2] :pred_dur = 0 
+                        else: pred_dur = service_dict[pred].serv_dur
+                        if pred_dur > time:
+                            continue
+                        # time_range = max(0, time - graph.nodes[node]["service_time"])
+                        # if node in [-1,-2] :node_dur = 0 
+                        # else: node_dur = service_dict[node].serv_dur
+                        time_range = max(0, time - pred_dur)
+                        for t in range(time_range + 1):
+                            current = dp_dict[pred][t][0] + graph[pred][node]['weight']
+                            # print("Pred: ", pred, ", Time: ", time, ", T: ",t , "Current: ",current, "dp_dict", dp_dict[pred][t])
+                            if current >= best:
+                                best = current
+                                best_pred = pred
+                    dp_dict[node][time] = (best, best_pred)
+        # print(dp_dict[-1])
+
+
+        #extracting path
+        remaining_time = time_constr
+        current = -1
+        spprc = dp_dict[current][remaining_time][0]
+
+        path = deque()
+
+        while current != -2:
+            path.appendleft(current)
+            # print(current, remaining_time)
+            pred = dp_dict[current][remaining_time][1]
+            # remaining_time -= graph.nodes[current]["service_time"]
+            if pred in [-1,-2] :pred_dur = 0 
+            else: pred_dur = service_dict[pred].serv_dur
+            
+            remaining_time -= pred_dur
+            # remaining_time = max(0, remaining_time)
+            current =pred
+            # print("Shortest Path: ", path)  
+
+        print("Shortest Path Length: ", spprc)
+        print("Shortest Path: ", path)
+
+        return list(path)[:-1], spprc
+
+    elif method == "ip":
+        service_dict[-1] = Service([-1,-1, "x", "00:00", "x", "00:00","x",0, "x", "x"])
+        service_dict[-2] = Service([-2,-2, "x", "00:00", "x", "00:00","x",0, "x", "x"])
+
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 0
+            else:
+                # graph[u][v]['weight'] = dual_values[u]
+                graph[u][v]['weight'] = dual_values["Service_" + str(u)]
+
+        model = gp.Model("SPPRC")
+        model.setParam('OutputFlag', 0) 
+
+        incoming_var = defaultdict(list)
+        outgoing_var = defaultdict(list) 
+        edge_vars = {} #xij - binary
+
+        incoming_adj_list = nx.to_dict_of_lists(graph.reverse())
+
+        #Decision Variables
+        for i,j in graph.edges():
+            edge_vars[i,j] = model.addVar(vtype=GRB.BINARY, name=f"x_{i}_{j}")
+            incoming_var[j].append(edge_vars[i,j])
+            outgoing_var[i].append(edge_vars[i,j])
+            # print(edge_vars)
+            # print("Edge: ", i, " ", j)
+            # model.update()
+            # print(edge_vars[(i,j)].VarName)
+
+        #Objective 
+        model.setObjective(gp.quicksum((edge_vars[i,j]*graph[i][j]['weight']) for i,j in graph.edges()), GRB.MAXIMIZE)
+
+
+        #Constraints - Flow conservation
+        flow_constraints = []
+        for i in graph.nodes():
+            if i == -2:
+                constr = model.addConstr(gp.quicksum(outgoing_var[i]) == 1,name=f"Service_flow_{i}") 
+                flow_constraints.append(constr)
+            elif i == -1:
+                constr = model.addConstr(gp.quicksum(incoming_var[i]) == 1,name=f"Service_flow_{i}") 
+                flow_constraints.append(constr)
+            else:
+                constr = model.addConstr(gp.quicksum(incoming_var[i])== gp.quicksum(outgoing_var[i]),name=f"Service_inflow_{i}") 
+                # constr2 = model.addConstr(gp.quicksum(outgoing_var[i]) ==1, name=f"Service_outflow_{i}")
+
+                flow_constraints.append(constr)
+                # flow_constraints.append(constr2)
+
+
+        
+        #resource constraint 
+        # duration = sum([(edge_vars[i,j].x *service_dict[i].serv_dur) for i,j in graph.edges() if i not in [-1,-2]])
+        # print("Total Duration: ", duration)
+        model.addConstr(gp.quicksum((edge_vars[i,j]*service_dict[i].serv_dur) for i,j in graph.edges() if i !=-1) <= time_constr)
+        
+
+        # model.update()
+        model.write("model_dp.lp")
+        model.optimize()
+
+        if model.status == GRB.INFEASIBLE:
+            print ("Hehe!")
+            print("Model is not feasible")
+        #extracting path
+
+        reduced_cost = 0
+        path = []
+        current = -2
+        path.append(current) 
+        while current != -1:
+            for var in outgoing_var[current]:
+                if var.x ==1:
+                    _ , next = extract_nodes(var.VarName)
+                    reduced_cost += graph[current][next]['weight']
+                    path.append(next)
+                    current = next
+                    break
+
+        del service_dict[-1]
+        del service_dict[-2]
+
+        return path[1:-1], reduced_cost
+        
     else:
         raise NotImplementedError(f"Method {method} not implemented")
     
+# def generate_new_column_3(graph, service_dict, dual_values, method = "dp", verbose = False, time_constr = 6*60):
+
+        
+
+
 
 def mip(service_dict, duties, show_solutions = True, show_objective = True,warm =140):
 

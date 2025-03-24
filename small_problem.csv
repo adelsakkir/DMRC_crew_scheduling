@@ -1,0 +1,59 @@
+Serial,Rake Num,Start Station,Start Time,End Station,End Time,Direction,service time,Category,Step Back Rake,Step Back Location
+915,736,DDSC,21:49,DDSC SDG,22:09,UP,20,inducting,No StepBack,No StepBack
+880,705,DDSC,6:00,KKDA DN,6:52,DN,52,inducting,No StepBack,No StepBack
+884,717,DDSC,6:20,PVGW UP,6:41,UP,21,inducting,No StepBack,No StepBack
+874,709,IPE,5:45,PVGW UP,6:56,UP,71,inducting,No StepBack,No StepBack
+863,707,KKDA DN,22:07,KKDA UP,22:41,DN,34,continuing,707,MUPR
+864,731,KKDA DN,22:12,KKDA UP,22:52,DN,40,continuing,731,MUPR
+865,744,KKDA DN,22:19,KKDA UP,22:51,DN,32,continuing,710,MUPR
+930,726,KKDA DN,23:37,MUPR,23:52,DN,15,stabling,No StepBack,No StepBack
+933,730,KKDA DN,24:22:00,MUPR,24:37:00,DN,15,stabling,No StepBack,No StepBack
+870,746,KKDA DN,23:07,MUPR 3RD SDG,24:46:00,DN,99,stabling,724,MUPR
+871,715,KKDA DN,23:22,MUPR 4TH,25:01:00,DN,99,stabling,719,MUPR
+869,718,KKDA DN,22:52,MUPR DN,24:02:00,DN,70,stabling,746,MUPR
+909,722,KKDA UP,21:22,IPE,21:29,UP,7,stabling,No StepBack,No StepBack
+918,713,KKDA UP,22:26,IPE,22:33,UP,7,stabling,No StepBack,No StepBack
+920,707,KKDA UP,22:41,IPE,22:48,UP,7,stabling,No StepBack,No StepBack
+922,710,KKDA UP,22:51,IPE,22:59,UP,8,stabling,No StepBack,No StepBack
+923,744,KKDA UP,22:53,IPE,23:00,UP,7,stabling,No StepBack,No StepBack
+2,708,KKDA UP,6:18,PVGW UP,7:25,UP,67,continuing,No StepBack,No StepBack
+331,731,KKDA UP,22:52,PVGW UP,23:58,UP,66,continuing,No StepBack,No StepBack
+333,716,KKDA UP,23:07,PVGW UP,24:13:00,UP,66,continuing,No StepBack,No StepBack
+335,733,KKDA UP,23:22,PVGW UP,24:28:00,UP,66,continuing,No StepBack,No StepBack
+363,741,MKPD,8:50,PVGW DN,9:23,DN,33,inducting,No StepBack,No StepBack
+365,742,MKPD,8:58,PVGW DN,9:31,DN,33,inducting,No StepBack,No StepBack
+443,743,MKPD,16:04,PVGW DN,16:38,DN,34,inducting,No StepBack,No StepBack
+449,745,MKPD,16:34,PVGW DN,17:08,DN,34,inducting,No StepBack,No StepBack
+877,706,MKPR,5:50,PVGW DN,6:03,DN,13,inducting,No StepBack,No StepBack
+883,714,MKPR,6:15,PVGW DN,6:30,DN,15,inducting,No StepBack,No StepBack
+686,718,MUPR,23:07,IPE 3RD,24:09:00,DN,62,inducting,No StepBack,No StepBack
+682,716,MUPR,22:30,MUPR,22:51,DN,21,inducting,No StepBack,No StepBack
+683,733,MUPR,22:37,MUPR,23:06,DN,29,inducting,No StepBack,No StepBack
+687,746,MUPR,23:22,MUPR,23:42,DN,20,inducting,No StepBack,No StepBack
+690,724,MUPR,24:07:00,MUPR,24:26:00,DN,19,inducting,No StepBack,No StepBack
+691,719,MUPR,24:22:00,MUPR,24:41:00,DN,19,inducting,No StepBack,No StepBack
+692,730,MUPR,24:37:00,SVVR DN,24:46:00,DN,9,inducting,No StepBack,No StepBack
+684,702,MUPR,22:47,VND,23:54,DN,67,inducting,No StepBack,No StepBack
+685,712,MUPR,22:57,VND,23:59,DN,62,inducting,No StepBack,No StepBack
+688,715,MUPR,23:37,VND,24:39:00,DN,62,inducting,No StepBack,No StepBack
+689,726,MUPR,23:52,VND,24:54:00,DN,62,inducting,No StepBack,No StepBack
+882,715,NZM,6:15,KKDA DN,6:42,DN,27,inducting,No StepBack,No StepBack
+911,736,PVGW DN,21:30,DDSC,21:49,DN,19,stabling,No StepBack,No StepBack
+319,712,PVGW DN,21:35,KKDA DN,22:42,DN,67,continuing,No StepBack,No StepBack
+322,718,PVGW DN,21:45,KKDA DN,22:52,DN,67,continuing,No StepBack,No StepBack
+520,745,PVGW UP,23:01,DDSC DN,24:16:00,UP,75,stabling,No StepBack,No StepBack
+502,737,PVGW UP,21:01,MKPD ,21:35,UP,34,stabling,No StepBack,No StepBack
+504,738,PVGW UP,21:11,MKPD ,21:45,UP,34,stabling,No StepBack,No StepBack
+507,705,PVGW UP,21:34,MKPD ,22:08,UP,34,stabling,No StepBack,No StepBack
+525,716,PVGW UP,24:13:00,MKPD ,24:48:00,UP,35,stabling,No StepBack,No StepBack
+524,731,PVGW UP,23:58,MKPR DN,24:33:00,UP,35,stabling,No StepBack,No StepBack
+526,733,PVGW UP,24:28:00,MKPR UP,25:03:00,UP,35,stabling,No StepBack,No StepBack
+518,734,PVGW UP,22:43,MVPO DN,24:34:00,UP,111,stabling,No StepBack,No StepBack
+503,718,PVGW UP,21:06,PVGW DN,21:45,UP,39,continuing,No StepBack,No StepBack
+505,746,PVGW UP,21:21,PVGW DN,22:00,UP,39,continuing,No StepBack,No StepBack
+912,740,PVGW UP,21:38,SAKP,21:41,UP,3,stabling,No StepBack,No StepBack
+875,711,SAKP,5:45,KKDA DN,6:59,DN,74,inducting,No StepBack,No StepBack
+913,740,SAKP,21:41,SAKP 3RD,22:01,UP,20,inducting,No StepBack,No StepBack
+926,707,SVVR,6:00,MUPR,6:08,UP,8,inducting,No StepBack,No StepBack
+872,702,VND,5:40,KKDA DN,6:08,DN,28,inducting,No StepBack,No StepBack
+873,703,VND,5:40,PVGW UP,6:58,UP,78,inducting,No StepBack,No StepBack
