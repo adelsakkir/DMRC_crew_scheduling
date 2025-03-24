@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import inspect
 import numpy as np
 from collections import defaultdict
+import random
 import gurobipy as gp 
 from gurobipy import GRB
 
@@ -89,15 +90,15 @@ def node_legal(service1, service2):
             if service1.end_stn == service2.start_stn and 0 <= (service2.start_time - service1.end_time) <= 15:
                 return True
         else:
-            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time + 30) and (service2.start_time <= service1.end_time + 150):
+            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time) and (service2.start_time <= service1.end_time + 120):
                 return True
         
     else:
         if service2.train_num == service1.stepback_train_num:
-            if (service1.end_stn == service2.start_stn) and (service1.end_time == service2.start_time):
+            if (service1.end_stn == service2.start_stn) and 0 <= (service2.start_time - service1.end_time) <= 15:
                 return True
         else:
-            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time + 30 ) and (service2.start_time <= service1.end_time + 150):
+            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time) and (service2.start_time <= service1.end_time + 120):
                 return True
     return False
 
@@ -278,28 +279,34 @@ def get_lazy_constraints(bad_paths, bad_paths_decision_vars, service_dict):
 
 def can_append(duty, service):
     ''' Checking if service can be appended to duty or not '''
+    # get the last service in the duty
     last_service = duty[-1]
     
-    start_end_stn_tf = last_service.end_stn == service.start_stn
-    # print(service.start_time, last_service.end_time)
-    start_end_time_tf = 5 <= (service.start_time - last_service.end_time) <= 15
+    # check if the end station of the last service is the as the start station of the current service
+    start_end_stn_tf = last_service.end_stn[:4] == service.start_stn[:4]
+    
+    # check if the start time of the current service is within 15 minutes of the end time of the last service
+    start_end_time_tf = 0 <= (service.start_time - last_service.end_time) <= 15
+    # check if the end station of the last service is the same as the start station of the current service after a break
     start_end_stn_tf_after_break = last_service.end_stn[:4] == service.start_stn[:4]
-    start_end_time_within = 50 <= (service.start_time - last_service.end_time) <= 150
+    # check if the start time of the current service is within 120 minutes of the end time of the last service, used for adding break logic
+    start_end_time_within = 0 <= (service.start_time - last_service.end_time) <= 120
 
+    # stepback train number check
     if last_service.stepback_train_num == "No StepBack":
         start_end_rake_tf = last_service.train_num == service.train_num
     else:
         start_end_rake_tf = last_service.stepback_train_num == service.train_num
     
-    # Check for valid conditions and time limits
-    if start_end_rake_tf and start_end_stn_tf and start_end_time_tf:
-        time_dur = service.end_time - duty[0].start_time
-        cont_time_dur = sum([serv.serv_dur for serv in duty])
-        if cont_time_dur <= 180 and time_dur <= 445:
+    # checking for valid conditions and time limits
+    if start_end_rake_tf and start_end_stn_tf and start_end_time_tf:    # if start end rake & station are same, and times are within limits
+        time_dur = service.end_time - duty[0].start_time                # total duty duration
+        cont_time_dur = sum([serv.serv_dur for serv in duty])           # continuous duty duration
+        if cont_time_dur <= 180 and time_dur <= 445:                    # continuous duty <= 3 hrs, total duty <= 7 hrs 25 mins
             return True
-    elif start_end_time_within and start_end_stn_tf_after_break:
-        time_dur = service.end_time - duty[0].start_time
-        if time_dur <= 445:
+    elif start_end_time_within and start_end_stn_tf_after_break:        # if start end station is same after a break, and times are within limits
+        time_dur = service.end_time - duty[0].start_time                
+        if time_dur <= 445:                                             # total duty <= 7 hrs 25 mins
             return True
     return False
 
@@ -370,7 +377,7 @@ def new_duty_with_bellman_ford(graph, dual_values):
         if u != -2:
             service_idx_u = u
             # dual_u = dual_values[service_idx_u]
-            dual_u = dual_values[f"service_{service_idx_u}"]
+            dual_u = dual_values[f"Service_{service_idx_u}"]
 
             graph_copy[u][v]['weight'] = -(dual_u)  # Adjust edge weight by dual value
         # else:
@@ -483,10 +490,10 @@ class DynamicBundleStabilisation:
     def get_stabilised_duals(self, duals, objective_value):
         """
         Update the bundle and caluclate stabilised dual values
-        Input:
+        Arguments:
             duals: dictionary of dual values
             objective_value: objective value of the current iteration
-        Output:
+        Returns:
             stabilised_duals: dictionary of stabilised dual values
         """
 
@@ -495,3 +502,192 @@ class DynamicBundleStabilisation:
             self.stability_center = dict(duals)
             self.best_objective = objective_value
             return duals
+        
+        self.bundle.append((duals, objective_value))
+        if len(self.bundle) > self.max_bundle_size:
+            # remove the oldest element
+            self.bundle.pop(0)
+
+        # update the stability center if obj imporves significantly
+        if objective_value < self.best_objective * 0.50:    # 50% improvement
+            self.stability_center = dict(duals)
+            self.best_objective = objective_value
+
+            # reduce mu to promote exploration
+            self.mu = max(0.2 * self.mu, 0.01)
+        else:
+            # increase for more stability
+            self.mu = min(2 * self.mu, 10)      
+
+        stabilised_duals = self.solve_bundle_subproblem()
+        return stabilised_duals
+    
+    def solve_bundle_subproblem(self):
+        """
+        Solves the bundle subproblem to get stabilised duals
+        Returns:
+            stabilised_duals: dictionary of stabilised dual values
+        """
+
+        if not self.bundle:
+            return self.stability_center
+    
+        model = gp.Model("BundleSubproblem")
+        model.setParam('OutputFlag', 0)
+
+        dual_vars = {}
+        for service in self.services:
+            dual_key = f"Service_{service.serv_num}"
+            dual_vars[dual_key] = model.addVar(vtype = GRB.CONTINUOUS, lb = 0.0, name=dual_key)
+        
+        # auxiliary variable for bundle model
+        v = model.addVar(vtype = GRB.CONTINUOUS, lb = -GRB.INFINITY, name="v")
+
+        # linearisation constraints for the bundle
+        for i, (bundle_dual, bundle_obj) in enumerate(self.bundle):
+            expr = bundle_obj
+            for service in self.services:
+                dual_key = f"Service_{service.serv_num}"
+                if dual_key in bundle_dual:
+                    expr += dual_vars[dual_key] - bundle_dual[dual_key]
+
+            model.addConstr(v >= expr, name=f"cut_{i}")
+        
+        # objective: minimize v + (mu/2) * ||dual_vars - stability_center||^2
+        stability_term = 0
+        for service in self.services:
+            dual_key = f"Service_{service.serv_num}"
+            if dual_key in self.stability_center:
+                diff = dual_vars[dual_key] - self.stability_center[dual_key]
+                stability_term += diff * diff
+
+        model.setObjective(v + (self.mu/2) * stability_term, GRB.MINIMIZE)
+
+        model.optimize()
+
+        if model.status == GRB.OPTIMAL:
+            # return the stabilised duals
+            stabilised_duals = {key: var.x for key, var in dual_vars.items()}
+            return stabilised_duals
+        else:
+            # if not optimized, return the stability center
+            return self.stability_center
+        
+def solve_RMLP_with_bundle(services, duties, bundle_stabiliser, threshold = 0):
+    '''
+    Solves the RMLP with bundle stabilisation
+
+    Arguments: services - list of Service objects,
+            duties - list of duties
+            bundle_stabiliser - object of DynamicBundleStabilisation class
+    
+    Returns: selected_duties - list of selected duties,
+            stabilised_dual_values - dict of stabilised dual values for each service,
+            selected_duties_vars - list of selected duty variables
+            objective_value = objective value of the iteration
+    '''
+    objective = 0
+    model = gp.Model("CrewScheduling")
+    model.setParam('OutputFlag', 0)
+    
+    duty_vars = []
+    for i in range(len(duties)):
+        duty_vars.append(model.addVar(vtype=GRB.CONTINUOUS, ub=GRB.INFINITY, lb=0, name=f"x{i}"))
+
+    model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
+
+    service_constraints = []
+    for service_idx, service in enumerate(services):
+        constr = model.addConstr(
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) >= 1,
+            name=f"Service_{service.serv_num}")
+        service_constraints.append(constr)
+
+    model.optimize()
+
+    # Step 5: Check the solution and retrieve dual values and selected duties
+    if model.status == GRB.INFEASIBLE:
+        print('Infeasible problem!')
+        return None, None, None, None
+    elif model.status == GRB.OPTIMAL:
+        objective = model.getObjective()
+        
+        # Get the dual variables for each service constraint
+        dual_values = {f"Service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
+
+        stabilised_dual_values = bundle_stabiliser.get_stabilised_duals(dual_values, objective.getValue())
+
+        selected_duties_vars = [v.varName for v in model.getVars() if v.x > threshold]
+        selected_duties = [v for v in model.getVars() if v.x > threshold]
+        
+        return selected_duties, stabilised_dual_values, selected_duties_vars, objective.getValue()
+    else:
+        print("No optimal solution found.")
+        return None, None, None, None
+    
+def better_pricing_problem_solver(graph, duals, prev_paths, epsilon=1e-6):
+    '''
+    Finds a new duty using NetworkX Bellman-Ford algorithm while preventing cycling
+
+    Arguments: graph - directed graph of services,
+            dual_values - list of dual values for each service
+            prev_paths - list of previously selected paths
+            epsilon - small value to perturb the edge weights and break ties
+
+    Returns: path - list of services in the new duty
+            cost - reduced cost of the new duty
+            graph_copy - copy of the graph with adjusted edge weights
+    '''
+
+    if prev_paths is None:
+        prev_paths = []
+
+    graph_copy = graph.copy()
+
+    import random
+    random.seed()
+
+    for u, v in graph_copy.edges():
+        base_cost = 1.0
+        if u != -2:
+            dual_u = duals[f"Service_{u}"]
+
+            # calculate reduced cost: base_cost - dual_u
+            perturbation = random.uniform(0, epsilon)
+            reduced_cost = -dual_u + perturbation
+            graph_copy[u][v]['weight'] = reduced_cost
+
+    try:
+        path = nx.bellman_ford_path(graph_copy, -2, -1, weight='weight')
+        reduced_cost = nx.bellman_ford_path_length(graph_copy, -2, -1, weight='weight')
+
+        if path in prev_paths:
+            print("prev path mai hai")
+            for attempt in range(5):  # Try up to 5 times to find new path
+                # Add larger perturbations to edges
+                for u, v in graph_copy.edges():
+                    perturbation = random.uniform(0, 0.01 * (attempt + 1))
+                    graph_copy[u][v]['weight'] += perturbation
+                
+                try:
+                    alt_path = nx.bellman_ford_path(graph_copy, -2, -1, weight='weight')
+                    alt_cost = nx.bellman_ford_path_length(graph_copy, -2, -1, weight='weight')
+
+                    if alt_path not in prev_paths and alt_cost < 0:
+                        return alt_path[1:-1], alt_cost, graph_copy
+                except:
+                    continue
+            
+            # if no better alt path has been found, check if the previous path is still worth adding again
+            if reduced_cost < -0.01:
+                return path[1:-1], reduced_cost, graph_copy
+            else:
+                return None, 0, graph_copy
+            
+        if reduced_cost < 0:
+            return path[1:-1], reduced_cost, graph_copy
+        else:
+            return None, reduced_cost, graph_copy
+        
+    except nx.NetworkXNoPath:
+        return None, 0, graph_copy
