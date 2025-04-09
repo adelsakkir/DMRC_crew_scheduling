@@ -1,5 +1,0 @@
-Service Number,Train Number,Start Station,Start Time (mins),End Station,End Time (mins),Direction,Service Duration,Jurisdiction,Stepback Train Number,Break Duration,Trip Duration,Duty Duration
-914,703,IPE,1301,VND,1321,UP,20,inducting,No StepBack,0,0,20
-
-684,702,MUPR,1367,VND,1434,DN,67,inducting,No StepBack,0,0,67
-
