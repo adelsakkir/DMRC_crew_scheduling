@@ -56,7 +56,6 @@ def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_
         roster_statistics(paths, service_dict) 
     return paths, len(paths)
 
-
 def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration=6*60, time_limit = 60, show_duties = False, show_roster_stats = False):
 
     model = gp.Model("MPC")
@@ -265,7 +264,6 @@ def mpc_duration_constr_lazy(graph, service_dict, show_logs = True, max_duty_dur
         roster_statistics(paths, service_dict)
 
     return paths, len(paths)
-
 
 
 def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_iterations =100, show_lazy_updates_every = 10, show_duties = False, show_roster_stats = False):
@@ -690,7 +688,7 @@ def column_generation4(graph, service_dict, current_duties, selected_vars, prici
         # duty, reduced_cost = generate_new_column(graph, service_dict, duals, method = pricing_method, verbose = verbose)
         
         start_time_1 = time.time()
-        duty, reduced_cost = generate_new_column_2(graph, service_dict, duals, method = pricing_method, verbose = verbose)
+        duty, reduced_cost = generate_new_column_2(graph, service_dict, duals, method = pricing_method, verbose = False)
         end_time_1 = time.time()
 
 
@@ -766,7 +764,7 @@ def column_generation4(graph, service_dict, current_duties, selected_vars, prici
 
     return current_duties, final_duties, selected_duties, obj, basis
 
-def cg_heuristics(graph, service_dict, current_duties, threshold):
+def cg_heuristics(graph, service_dict, current_duties, threshold, n = 3):
     selected_vars = []
     
     obj, duals, basis, selected_duties, selected_duties_vars = restricted_linear_program(service_dict, current_duties, show_solutions= False, show_objective = True)
@@ -788,20 +786,26 @@ def cg_heuristics(graph, service_dict, current_duties, threshold):
         if not added_vars:      
             sorted_basis = dict(sorted(basis.items(), key=lambda item: item[1], reverse=True))
             print("sorted basis: ", sorted_basis)
-            selected_vars += [max((k for k in basis if basis[k] != 1), key=lambda k: basis[k])]
-            print(selected_vars[-1])
+            # selected_vars += [max((k for k in basis if basis[k] != 1), key=lambda k: basis[k])]
+            top_n_basis = dict(list(sorted_basis.items())[:n])
+            print(top_n_basis)
+            for key, value in top_n_basis.items():
+                if key not in selected_vars:
+                    print("key added in sorted method: ", key, value)
+                    selected_vars += [key]
+                    added_vars = True
             # print(to_add)
             print("no more variables to add, choosing the max from basis")
 
         negative_duals = 0
         for key, value in duals.items():
             if value < 0:
-                print("ye raha negative dual: ", key, value, "\n")
+                # print("ye raha negative dual: ", key, value, "\n")
                 negative_duals += 1
         print("Number of negative duals: ", negative_duals)
         print("Number of selected variables: ", len(selected_vars))
 
-        current_duties, final_duties, selected_duties, obj, basis = column_generation4(graph, service_dict, selected_vars=selected_vars, current_duties=current_duties, pricing_method = "topological sort", iterations = 1000, verbose = True)
+        current_duties, final_duties, selected_duties, obj, basis = column_generation4(graph, service_dict, selected_vars=selected_vars, current_duties=current_duties, pricing_method = "topological sort", iterations = 1000, verbose = False)
         print("Current Objective: ", obj)
 
         print("\n=================================================================\n")

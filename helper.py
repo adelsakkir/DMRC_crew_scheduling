@@ -363,7 +363,7 @@ def restricted_linear_program(service_dict, duties, show_solutions = False, show
     service_constraints = []
     for service_idx, service in enumerate(service_dict.values()):
         constr = model.addConstr(
-            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) >= 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
